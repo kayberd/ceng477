@@ -2,16 +2,29 @@
 #include "parser.h"
 #include "ppm.h"
 #include "math.h"
+#include "unistd.h" 
 #define LEFT x
 #define RIGHT y
 #define BOTTOM z
 #define TOP w
-#define EPSILON 0.00001
+#define EPSILON 0.0000000000001
 
 using namespace parser;
 typedef unsigned char RGB[3];
-;
 
+double max(double x,double y){
+    return x>y ? x : y;
+}
+double min(double x,double y){
+    return x<y ? x : y;
+}
+Vec3f cartesianProduct(Vec3f v1,Vec3f v2){
+    Vec3f result;
+    result.x = v1.x*v2.x;
+    result.y = v1.y*v2.y;
+    result.z = v1.z*v2.z;
+    return result;
+}
 //mults a vector with a scaler returns a vector
 Vec3f multS(Vec3f a,double s)
 {
@@ -40,6 +53,9 @@ double dot(Vec3f a,Vec3f b)
 Vec3f normalize(Vec3f a)
 {
 	return multS(a,1.0/sqrt(dot(a,a)));
+}
+double clip(double n) {
+  return max(0,min(n, 255));
 }
 
 //c_P[0] = v_A[1] * v_B[2] - v_A[2] * v_B[1];
@@ -78,7 +94,7 @@ Ray generateRay(int i,int j,Camera* cam){
 
 }
 
-double intersectSphere(Ray r,Vec3f center,double radius){
+double intersectSphere(Ray& r,Vec3f& center,double radius){
     double A,B,C;
     double delta;
     Vec3f c;
@@ -106,10 +122,15 @@ double intersectSphere(Ray r,Vec3f center,double radius){
     return t;
 }
 
+Vec3f calcNormalSphere(Vec3f& center,Vec3f& p,float radius){
+    Vec3f normal;
+    normal = normalize(multS(add(p,multS(center,-1)),1.0/radius));
+    return normal;
+}
 Vec3f calcNormalTri( Vec3f* triangle){
     Vec3f normal;
     normal = cross(add(triangle[2],multS(triangle[1],-1)),add(triangle[0],multS(triangle[1],-1)));
-    return normal;
+    return normalize(normal);
 }
 double instersectTriangle(Ray r, Vec3f* triangle,Vec3f& tri_normal){
     Vec3f P,vp,vc,minus_aux;
@@ -145,21 +166,24 @@ double instersectTriangle(Ray r, Vec3f* triangle,Vec3f& tri_normal){
 }
 
 Vec3f computeColor(Ray r,Scene* scene){
-    int i,j,k,minI,minL;
-    Vec3f color,L,N,P,sphereCenter,triangle[3],tri_normal;
+    int i,j,k,minS,minTri,minM,minMf;
+    Vec3f color,L,N,P,sphereCenter,triangle[3],normal;
+    Vec3f intersection_point;
+    Material material;
     double minT = 90000,t;
     
-    color.x=color.y=color.z=0;
+    color.x = scene->background_color.x;
+    color.y = scene->background_color.y;
+    color.z = scene->background_color.z;
 
-    minI=-1;
-    minL=-1;
+    minS=minTri=minM=minMf = -1;
+    
 
     for(i=0;i<scene->spheres.size();i++){
         sphereCenter = scene->vertex_data[scene->spheres[i].center_vertex_id-1];
         t = intersectSphere(r,sphereCenter,scene->spheres[i].radius);
-        if(t<minT && t>= 0){
-            color = {255,255,255};
-            minI = i;
+        if(t<minT && t>= EPSILON){
+            minS = i;
             minT = t;
         }
     }
@@ -168,11 +192,10 @@ Vec3f computeColor(Ray r,Scene* scene){
         triangle[0] = scene->vertex_data[scene->triangles[j].indices.v0_id-1];
         triangle[1] = scene->vertex_data[scene->triangles[j].indices.v1_id-1];
         triangle[2] = scene->vertex_data[scene->triangles[j].indices.v2_id-1];
-        tri_normal = calcNormalTri(triangle);
-        t = instersectTriangle(r,triangle,tri_normal);
-        if(t<minT && t>= 0){
-            color = {255,255,255};
-            minI = j;
+        normal = calcNormalTri(triangle);
+        t = instersectTriangle(r,triangle,normal);
+        if(t<minT && t>= EPSILON){
+            minTri = j;
             minT = t;
         }
     }
@@ -184,18 +207,84 @@ Vec3f computeColor(Ray r,Scene* scene){
             triangle[0] = scene->vertex_data[scene->meshes[k].faces[l].v0_id-1];
             triangle[1] = scene->vertex_data[scene->meshes[k].faces[l].v1_id-1];
             triangle[2] = scene->vertex_data[scene->meshes[k].faces[l].v2_id-1];
-            tri_normal = calcNormalTri(triangle);
-            t = instersectTriangle(r,triangle,tri_normal);
+            normal = calcNormalTri(triangle);
+            t = instersectTriangle(r,triangle,normal);
             //printf("Mesh k:%d l:%d\n",k,l);
-            if(t<minT && t>= 0){
-                color = {255,255,255};
-                minI = k;
-                minL = l;
+            if(t<minT && t>= EPSILON){
+                minM = k;
+                minMf = l;
                 minT = t;
             }
         }
     }
+    if(minT==90000) return color;
+    intersection_point = add(r.o,multS(r.d,minT));
+    Vec3f diffuse = {0.0,0.0,0.0};
+    Vec3f specularity = {0.0,0.0,0.0},h,w_0,w_0w_1;
+    Vec3f ambient;
+    
+    //is_mesh check
+    if(minM > -1){
+        triangle[0] = scene->vertex_data[scene->meshes[minM].faces[minMf].v0_id-1];
+        triangle[1] = scene->vertex_data[scene->meshes[minM].faces[minMf].v1_id-1];
+        triangle[2] = scene->vertex_data[scene->meshes[minM].faces[minMf].v2_id-1];
 
+        normal = calcNormalTri(triangle);
+        material = scene->materials[scene->meshes[minM].material_id-1];
+        
+    
+    }
+    //is triangle check
+    else if(minTri> -1){
+        triangle[0] = scene->vertex_data[scene->triangles[minTri].indices.v0_id-1];
+        triangle[1] = scene->vertex_data[scene->triangles[minTri].indices.v1_id-1];
+        triangle[2] = scene->vertex_data[scene->triangles[minTri].indices.v2_id-1];
+
+        normal = calcNormalTri(triangle);
+        material = scene->materials[scene->triangles[minTri].material_id-1];
+    }
+    //then it is sphere
+    else if(minS > -1){
+        
+        normal = calcNormalSphere(scene->vertex_data[scene->spheres[minS].center_vertex_id-1],intersection_point,scene->spheres[minS].radius);
+        material = scene->materials[scene->spheres[minS].material_id-1];
+    }
+    //calc ambient
+    ambient = cartesianProduct(material.ambient,scene->ambient_light);
+
+    //calc diffuse and specularity
+  
+    Vec3f w_i,i_r2;
+    double len_w_i_square;
+    double cos_theta_d,cos_theta_s_w_phong;
+    
+    
+    for(int i=0;i<scene->point_lights.size();i++){
+        w_i = add(scene->point_lights[i].position,multS(intersection_point,-1));
+        len_w_i_square = dot(w_i,w_i);
+        cos_theta_d =  max(0,dot(w_i,normal));
+        if(cos_theta_d == 0) continue;
+        i_r2 = multS(scene->point_lights[i].intensity,(1.0/len_w_i_square));
+        diffuse = add(diffuse,cartesianProduct(material.diffuse,multS(i_r2,cos_theta_d)));
+        
+        w_0 = add(scene->cameras[0].position,multS(intersection_point,-1));
+        w_0 = normalize(w_0);
+        w_0w_1 = add(w_i,w_0);
+        w_0w_1 = normalize(w_0w_1);
+        h=multS(w_0w_1,sqrt(dot(w_0w_1,w_0w_1)));
+        h=normalize(h);
+        
+        cos_theta_s_w_phong = (double) pow(max(0,dot(normal,h)),material.phong_exponent);
+        specularity = add(specularity,cartesianProduct(material.specular,multS(i_r2,cos_theta_s_w_phong)));
+        
+    }
+     color.x = clip(add(add(diffuse,specularity),add(color,ambient)).x);
+     color.y = clip(add(add(diffuse,specularity),add(color,ambient)).y);
+     color.z = clip(add(add(diffuse,specularity),add(color,ambient)).z);
+
+     //printf("R:%.2f G:%.2f B:%.2f\n",color.x,color.y,color.z);
+     //sleep(0.001);
+    
     return color;
 }
 
@@ -219,9 +308,9 @@ int main(int argc, char* argv[])
             int colIdx = x / columnWidth;
             Ray myray = generateRay(x,y,&(scene.cameras[0]));
             Vec3f rayColor = computeColor(myray,&scene);
-            image[i++] = (int) (rayColor.x);
-            image[i++] = (int) (rayColor.y);
-            image[i++] = (int) (rayColor.z);
+            image[i++] = (int) (rayColor.x+0.5);
+            image[i++] = (int) (rayColor.y+0.5);
+            image[i++] = (int) (rayColor.z+0.5);
         }
     } 
     write_ppm("test.ppm", image, width, height);
