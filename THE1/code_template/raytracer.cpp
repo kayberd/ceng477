@@ -262,6 +262,7 @@ Vec3f computeColor(Ray r,Scene* scene){
     for(int i=0;i<scene->point_lights.size();i++){
         w_i = add(scene->point_lights[i].position,multS(intersection_point,-1));
         len_w_i_square = dot(w_i,w_i);
+        w_i =normalize(w_i);
         cos_theta_d =  max(0,dot(w_i,normal));
         if(cos_theta_d == 0) continue;
         i_r2 = multS(scene->point_lights[i].intensity,(1.0/len_w_i_square));
