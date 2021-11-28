@@ -167,7 +167,7 @@ double instersectTriangle(Ray r, Vec3f* triangle,Vec3f& tri_normal){
 
 Vec3f computeColor(Ray r,Scene* scene){
     int i,j,k,minS,minTri,minM,minMf;
-    Vec3f color,L,N,P,sphereCenter,triangle[3],normal;
+    Vec3f color,L,N,P,sphereCenter,triangle[3],normal,normal_shadow;
     Vec3f intersection_point;
     Material material;
     double minT = 90000,t;
@@ -223,8 +223,8 @@ Vec3f computeColor(Ray r,Scene* scene){
     };
     
     intersection_point = add(r.o,multS(r.d,minT));
-    Vec3f diffuse = {0.0,0.0,0.0};
-    Vec3f specularity = {0.0,0.0,0.0},h,w_0,w_0w_1;
+    Vec3f diffuse = {0.0,0.0,0.0},specularity = {0.0,0.0,0.0};
+    Vec3f h,w_0,w_0w_1;
     Vec3f ambient;
     
     //is_mesh check
@@ -256,18 +256,70 @@ Vec3f computeColor(Ray r,Scene* scene){
 
     //calc ambient
     ambient = cartesianProduct(material.ambient,scene->ambient_light);
+    color = add(color,ambient);
 
     //calc diffuse and specularity
   
     Vec3f w_i,i_r2;
-    double len_w_i_square;
+    Ray shadow_ray;
+    double len_w_i_square,len_w_i;
     double cos_theta_d,cos_theta_s_w_phong;
+    bool is_in_shadow;
     
     
     for(int i=0;i<scene->point_lights.size();i++){
+        
+        minS=minTri=minM=minMf = -1;
+        is_in_shadow = false;
         w_i = add(scene->point_lights[i].position,multS(intersection_point,-1));
         len_w_i_square = dot(w_i,w_i);
+        len_w_i = sqrt(len_w_i_square);
+        
         w_i =normalize(w_i);
+
+
+        shadow_ray.o = add(intersection_point,multS(normal,scene->shadow_ray_epsilon));
+        shadow_ray.d = w_i;
+
+
+        for(int p=0;p<scene->spheres.size()&& !is_in_shadow;p++){
+            sphereCenter = scene->vertex_data[scene->spheres[p].center_vertex_id-1];
+            t = intersectSphere(shadow_ray,sphereCenter,scene->spheres[p].radius);
+            if(t<len_w_i && t>= EPSILON ){
+                is_in_shadow=true;
+            }
+        }
+        for(j=0;j<scene->triangles.size() && !is_in_shadow;j++){
+            
+            triangle[0] = scene->vertex_data[scene->triangles[j].indices.v0_id-1];
+            triangle[1] = scene->vertex_data[scene->triangles[j].indices.v1_id-1];
+            triangle[2] = scene->vertex_data[scene->triangles[j].indices.v2_id-1];
+            normal_shadow = calcNormalTri(triangle);
+            t = instersectTriangle(shadow_ray,triangle,normal_shadow);
+            if(t<len_w_i && t>= EPSILON){
+                is_in_shadow=true;
+            }
+        }
+        
+        for(k=0;k<scene->meshes.size() && !is_in_shadow;k++){
+            //printf("%d\n",scene->meshes[k].faces.size());
+            for(int l=0;l<scene->meshes[k].faces.size() && !is_in_shadow;l++){
+                triangle[0] = scene->vertex_data[scene->meshes[k].faces[l].v0_id-1];
+                triangle[1] = scene->vertex_data[scene->meshes[k].faces[l].v1_id-1];
+                triangle[2] = scene->vertex_data[scene->meshes[k].faces[l].v2_id-1];
+                normal_shadow = calcNormalTri(triangle);
+                t = instersectTriangle(shadow_ray,triangle,normal_shadow);
+                //printf("Mesh k:%d l:%d\n",k,l);
+                if(t<len_w_i && t>= EPSILON){
+                    is_in_shadow=true;
+                }
+            }
+        }
+
+        if(is_in_shadow) continue;
+
+
+
         cos_theta_d =  max(0,dot(w_i,normal));
         if(cos_theta_d == 0) continue;
         i_r2 = multS(scene->point_lights[i].intensity,(1.0/len_w_i_square));
@@ -284,9 +336,9 @@ Vec3f computeColor(Ray r,Scene* scene){
         specularity = add(specularity,cartesianProduct(material.specular,multS(i_r2,cos_theta_s_w_phong)));
         
     }
-     color.x = clip(add(add(diffuse,specularity),add(color,ambient)).x);
-     color.y = clip(add(add(diffuse,specularity),add(color,ambient)).y);
-     color.z = clip(add(add(diffuse,specularity),add(color,ambient)).z);
+     color.x = clip(add(add(diffuse,specularity),color).x);
+     color.y = clip(add(add(diffuse,specularity),color).y);
+     color.z = clip(add(add(diffuse,specularity),color).z);
 
      //shadow part
 
