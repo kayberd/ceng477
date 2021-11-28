@@ -2,11 +2,7 @@
 #include "parser.h"
 #include "ppm.h"
 #include "math.h"
-#include "unistd.h" 
-#define LEFT x
-#define RIGHT y
-#define BOTTOM z
-#define TOP w
+#define MAX 9999999999
 #define EPSILON 0.0000000000001
 
 using namespace parser;
@@ -165,13 +161,14 @@ double instersectTriangle(Ray r, Vec3f* triangle,Vec3f& tri_normal){
      
 }
 
-Vec3f computeColor(bool& is_primary,Ray r,Scene* scene,int& left_rec){
+Vec3f computeColor(bool& is_primary,Ray r,Scene* scene,int& left_rec,int camera_index){
     int i,j,k,minS,minTri,minM,minMf;
     Vec3f color,L,N,P,sphereCenter,triangle[3],normal,normal_shadow;
     Vec3f intersection_point;
     Vec3f rec_color = {0,0,0};
     Material material;
-    double minT = 90000,t;
+    double minT = MAX;
+    double t;
     color = {0,0,0};
 
     minS=minTri=minM=minMf = -1;
@@ -217,7 +214,7 @@ Vec3f computeColor(bool& is_primary,Ray r,Scene* scene,int& left_rec){
             }
         }
     }
-    if(minT==90000){
+    if(minT == MAX){
         color.x = scene->background_color.x;
         color.y = scene->background_color.y;
         color.z = scene->background_color.z;
@@ -331,7 +328,7 @@ Vec3f computeColor(bool& is_primary,Ray r,Scene* scene,int& left_rec){
         if(is_primary == false)
             w_0 = multS(add(r.o,r.d),-1);
         else
-            w_0 = add(scene->cameras[0].position,multS(intersection_point,-1));
+            w_0 = add(scene->cameras[camera_index].position,multS(intersection_point,-1));
 
         w_0 = normalize(w_0);
         w_0w_1 = add(w_i,w_0);
@@ -350,7 +347,7 @@ Vec3f computeColor(bool& is_primary,Ray r,Scene* scene,int& left_rec){
         is_primary=false;
         left_rec--;
         //printf("left rec:%d\n",left_rec);
-        rec_color = cartesianProduct(material.mirror,computeColor(is_primary,*refl_r,scene,left_rec));
+        rec_color = cartesianProduct(material.mirror,computeColor(is_primary,*refl_r,scene,left_rec,camera_index));
         //printf("%.2f,%.2f,%.2f\n",rec_color.x,rec_color.y,rec_color.z);
     }
      color.x = clip(add(add(diffuse,specularity),add(rec_color,color)).x);
@@ -380,16 +377,21 @@ int main(int argc, char* argv[])
     unsigned char* image = new unsigned char[width*height*3];
     
     int i=0;
-    for(int y=0;y<height;++y){
-        for(int x=0;x<width;++x){
-            Ray myray = generateRay(x,y,&(scene.cameras[0]));
-            int left_rec = scene.max_recursion_depth;
-            bool is_primary = true;
-            Vec3f rayColor = computeColor(is_primary,myray,&scene,left_rec);
-            image[i++] = (int) (rayColor.x+0.5);
-            image[i++] = (int) (rayColor.y+0.5);
-            image[i++] = (int) (rayColor.z+0.5);
+    for(int c=0;c<scene.cameras.size();c++){
+        for(int y=0;y<height;++y){
+            for(int x=0;x<width;++x){
+                Ray myray = generateRay(x,y,&(scene.cameras[c]));
+                int left_rec = scene.max_recursion_depth;
+                bool is_primary = true;
+                Vec3f rayColor = computeColor(is_primary,myray,&scene,left_rec,c);
+                image[i++] = (int) (rayColor.x+0.5);
+                image[i++] = (int) (rayColor.y+0.5);
+                image[i++] = (int) (rayColor.z+0.5);
+            }
         }
-    } 
-    write_ppm("test.ppm", image, width, height);
+        char* image_name;
+        image_name = &(scene.cameras[c].image_name[0]);
+        write_ppm(image_name, image, width, height); 
+    }
+    
 }
