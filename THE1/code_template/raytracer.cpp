@@ -165,16 +165,19 @@ double instersectTriangle(Ray r, Vec3f* triangle,Vec3f& tri_normal){
      
 }
 
-Vec3f computeColor(Ray r,Scene* scene){
+Vec3f computeColor(bool& is_primary,Ray r,Scene* scene,int& left_rec){
     int i,j,k,minS,minTri,minM,minMf;
     Vec3f color,L,N,P,sphereCenter,triangle[3],normal,normal_shadow;
     Vec3f intersection_point;
+    Vec3f rec_color = {0,0,0};
     Material material;
     double minT = 90000,t;
     color = {0,0,0};
 
     minS=minTri=minM=minMf = -1;
-    
+    if(left_rec == 0 && is_primary==false){
+        return color;
+    }
 
     for(i=0;i<scene->spheres.size();i++){
         sphereCenter = scene->vertex_data[scene->spheres[i].center_vertex_id-1];
@@ -324,8 +327,12 @@ Vec3f computeColor(Ray r,Scene* scene){
         if(cos_theta_d == 0) continue;
         i_r2 = multS(scene->point_lights[i].intensity,(1.0/len_w_i_square));
         diffuse = add(diffuse,cartesianProduct(material.diffuse,multS(i_r2,cos_theta_d)));
-        
-        w_0 = add(scene->cameras[0].position,multS(intersection_point,-1));
+
+        if(is_primary == false)
+            w_0 = multS(add(r.o,r.d),-1);
+        else
+            w_0 = add(scene->cameras[0].position,multS(intersection_point,-1));
+
         w_0 = normalize(w_0);
         w_0w_1 = add(w_i,w_0);
         w_0w_1 = normalize(w_0w_1);
@@ -336,9 +343,19 @@ Vec3f computeColor(Ray r,Scene* scene){
         specularity = add(specularity,cartesianProduct(material.specular,multS(i_r2,cos_theta_s_w_phong)));
         
     }
-     color.x = clip(add(add(diffuse,specularity),color).x);
-     color.y = clip(add(add(diffuse,specularity),color).y);
-     color.z = clip(add(add(diffuse,specularity),color).z);
+    if(material.is_mirror == true){
+        Ray* refl_r = (Ray*) malloc(sizeof(Ray));
+        refl_r->d =  normalize(add(multS(w_0,-1),multS(multS(normal,2),dot(normal,w_0))));
+        refl_r->o = intersection_point;
+        is_primary=false;
+        left_rec--;
+        //printf("left rec:%d\n",left_rec);
+        rec_color = cartesianProduct(material.mirror,computeColor(is_primary,*refl_r,scene,left_rec));
+        //printf("%.2f,%.2f,%.2f\n",rec_color.x,rec_color.y,rec_color.z);
+    }
+     color.x = clip(add(add(diffuse,specularity),add(rec_color,color)).x);
+     color.y = clip(add(add(diffuse,specularity),add(rec_color,color)).y);
+     color.z = clip(add(add(diffuse,specularity),add(rec_color,color)).z);
 
      //shadow part
 
@@ -360,15 +377,15 @@ int main(int argc, char* argv[])
     width = scene.cameras[0].image_width;
     height = scene.cameras[0].image_height;
     
-    int columnWidth = width/8;
     unsigned char* image = new unsigned char[width*height*3];
-
+    
     int i=0;
     for(int y=0;y<height;++y){
         for(int x=0;x<width;++x){
-            int colIdx = x / columnWidth;
             Ray myray = generateRay(x,y,&(scene.cameras[0]));
-            Vec3f rayColor = computeColor(myray,&scene);
+            int left_rec = scene.max_recursion_depth;
+            bool is_primary = true;
+            Vec3f rayColor = computeColor(is_primary,myray,&scene,left_rec);
             image[i++] = (int) (rayColor.x+0.5);
             image[i++] = (int) (rayColor.y+0.5);
             image[i++] = (int) (rayColor.z+0.5);

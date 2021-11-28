@@ -12,7 +12,7 @@
             <Up>0 1 0</Up>
             <NearPlane>-0.5 0.5 -0.5 0.5</NearPlane>
             <NearDistance>1</NearDistance>
-            <ImageResolution>1024 1024</ImageResolution>
+            <ImageResolution>640 640</ImageResolution>
             <ImageName>mirror_spheres.ppm</ImageName>
         </Camera>
     </Cameras>
