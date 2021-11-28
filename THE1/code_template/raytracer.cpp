@@ -171,10 +171,7 @@ Vec3f computeColor(Ray r,Scene* scene){
     Vec3f intersection_point;
     Material material;
     double minT = 90000,t;
-    
-    color.x = scene->background_color.x;
-    color.y = scene->background_color.y;
-    color.z = scene->background_color.z;
+    color = {0,0,0};
 
     minS=minTri=minM=minMf = -1;
     
@@ -217,7 +214,14 @@ Vec3f computeColor(Ray r,Scene* scene){
             }
         }
     }
-    if(minT==90000) return color;
+    if(minT==90000){
+        color.x = scene->background_color.x;
+        color.y = scene->background_color.y;
+        color.z = scene->background_color.z;
+        return color;
+    
+    };
+    
     intersection_point = add(r.o,multS(r.d,minT));
     Vec3f diffuse = {0.0,0.0,0.0};
     Vec3f specularity = {0.0,0.0,0.0},h,w_0,w_0w_1;
@@ -249,6 +253,7 @@ Vec3f computeColor(Ray r,Scene* scene){
         normal = calcNormalSphere(scene->vertex_data[scene->spheres[minS].center_vertex_id-1],intersection_point,scene->spheres[minS].radius);
         material = scene->materials[scene->spheres[minS].material_id-1];
     }
+
     //calc ambient
     ambient = cartesianProduct(material.ambient,scene->ambient_light);
 
@@ -282,6 +287,9 @@ Vec3f computeColor(Ray r,Scene* scene){
      color.x = clip(add(add(diffuse,specularity),add(color,ambient)).x);
      color.y = clip(add(add(diffuse,specularity),add(color,ambient)).y);
      color.z = clip(add(add(diffuse,specularity),add(color,ambient)).z);
+
+     //shadow part
+
 
      //printf("R:%.2f G:%.2f B:%.2f\n",color.x,color.y,color.z);
      //sleep(0.001);
