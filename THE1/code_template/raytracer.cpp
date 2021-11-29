@@ -2,6 +2,7 @@
 #include "parser.h"
 #include "ppm.h"
 #include "math.h"
+#include <cstring>
 #define MAX 9999999999
 #define EPSILON 0.0000000000001
 
@@ -275,14 +276,14 @@ Vec3f computeColor(bool& is_primary,Ray r,Scene* scene,int& left_rec,int camera_
         len_w_i_square = dot(w_i,w_i);
         len_w_i = sqrt(len_w_i_square);
         
-        w_i =normalize(w_i);
+        w_i = normalize(w_i);
 
 
         shadow_ray.o = add(intersection_point,multS(normal,scene->shadow_ray_epsilon));
         shadow_ray.d = w_i;
 
 
-        for(int p=0;p<scene->spheres.size()&& !is_in_shadow;p++){
+        for(int p=0;p<scene->spheres.size() && !is_in_shadow;p++){
             sphereCenter = scene->vertex_data[scene->spheres[p].center_vertex_id-1];
             t = intersectSphere(shadow_ray,sphereCenter,scene->spheres[p].radius);
             if(t<len_w_i && t>= EPSILON ){
@@ -371,13 +372,16 @@ int main(int argc, char* argv[])
     
    
     int width,height;
-    width = scene.cameras[0].image_width;
-    height = scene.cameras[0].image_height;
+  
     
-    unsigned char* image = new unsigned char[width*height*3];
+    unsigned char* image;
     
-    int i=0;
+    
     for(int c=0;c<scene.cameras.size();c++){
+        width = scene.cameras[c].image_width;
+        height = scene.cameras[c].image_height;
+        image = new unsigned char[width*height*3];
+        int i=0;
         for(int y=0;y<height;++y){
             for(int x=0;x<width;++x){
                 Ray myray = generateRay(x,y,&(scene.cameras[c]));
@@ -389,8 +393,8 @@ int main(int argc, char* argv[])
                 image[i++] = (int) (rayColor.z+0.5);
             }
         }
-        char* image_name;
-        image_name = &(scene.cameras[c].image_name[0]);
+        char image_name[scene.cameras[c].image_name.size()+1];
+        strcpy(image_name,(scene.cameras[c].image_name).c_str());
         write_ppm(image_name, image, width, height); 
     }
     
